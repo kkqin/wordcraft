@@ -2323,6 +2323,58 @@ mod tests {
         assert!(!a.session.sel.is_collapsed(), "the drag left a selection");
     }
 
+    /// Middle-click scrolls on its own; the left click that stops it doesn't move the caret.
+    #[test]
+    fn middle_click_auto_scroll_stops_on_a_click_that_is_swallowed() {
+        let ctx = egui::Context::default();
+        let mut a = app();
+        a.run("text.insert", json!({"text": "lorem ipsum dolor sit amet consectetur ".repeat(1200)})).unwrap();
+        a.run("caret.docStart", json!({})).unwrap();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 600.0));
+        let mut t = 0.0;
+        let mut frame = |a: &mut WordApp, events: Vec<egui::Event>| {
+            t += 1.0 / 60.0;
+            let input = egui::RawInput { events, time: Some(t), screen_rect: Some(screen), ..Default::default() };
+            ctx.run_ui(input, |ui| {
+                a.logic(ui.ctx());
+                a.ui(ui);
+            })
+            .drop_without_applying_deltas();
+        };
+        let button = |pos, button, pressed| egui::Event::PointerButton { pos, button, pressed, modifiers: Default::default() };
+        for _ in 0..3 {
+            frame(&mut a, Vec::new());
+        }
+        let caret = a.session.sel.focus.clone();
+        let (Some(vp), Some(page)) = (a.canvas.viewport, a.canvas.page_rects.first()) else { panic!("the canvas laid out") };
+        let anchor = page.left_top() + egui::vec2(120.0, 150.0);
+        frame(&mut a, vec![egui::Event::PointerMoved(anchor)]);
+        frame(&mut a, vec![button(anchor, egui::PointerButton::Middle, true)]);
+        frame(&mut a, vec![button(anchor, egui::PointerButton::Middle, false)]);
+        // Move the pointer well below the anchor: the page scrolls without more input.
+        let below = anchor + egui::vec2(0.0, 150.0).min(vp.size());
+        for _ in 0..30 {
+            frame(&mut a, vec![egui::Event::PointerMoved(below)])
+        }
+        let scrolled = a.canvas.scroll_offset.y;
+        assert!(scrolled > 0.0, "the view scrolled toward later content");
+        frame(&mut a, vec![egui::Event::PointerMoved(below)]);
+        assert!(a.canvas.scroll_offset.y > scrolled, "it keeps going with the pointer still");
+        // A left click stops it and does nothing else.
+        frame(&mut a, vec![button(below, egui::PointerButton::Primary, true)]);
+        frame(&mut a, vec![button(below, egui::PointerButton::Primary, false)]);
+        let stopped = a.canvas.scroll_offset.y;
+        for _ in 0..10 {
+            frame(&mut a, vec![egui::Event::PointerMoved(below)]);
+        }
+        assert_eq!(a.canvas.scroll_offset.y, stopped, "the scroll stopped");
+        assert_eq!(a.session.sel.focus, caret, "the stopping click was swallowed");
+        // The next click is a normal one again.
+        frame(&mut a, vec![button(below, egui::PointerButton::Primary, true)]);
+        frame(&mut a, vec![button(below, egui::PointerButton::Primary, false)]);
+        assert_ne!(a.session.sel.focus, caret, "later clicks move the caret");
+    }
+
     /// Issue #123: zoomed out, pages sit side by side, and clicks map to the page under the pointer.
     #[test]
     fn zoomed_out_pages_sit_side_by_side_and_clicks_land_on_them() {

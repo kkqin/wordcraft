@@ -26,6 +26,11 @@ const EDGE_SPEED_MIN: f32 = 45.0;
 const EDGE_SPEED_MAX: f32 = 720.0;
 /// Longest frame time trusted for auto-scroll (a stall shouldn't jump the page).
 const EDGE_MAX_DT: f32 = 0.1;
+/// Middle-click auto-scroll: the pointer rests within this many points of the anchor, then
+/// scrolls [`PAN_GAIN`] points a second per point beyond it, up to [`PAN_MAX`].
+const PAN_DEAD: f32 = 12.0;
+const PAN_GAIN: f32 = 8.0;
+const PAN_MAX: f32 = 2400.0;
 
 pub struct CanvasState {
     textures: HashMap<usize, (u64, TextureHandle)>,
@@ -93,6 +98,12 @@ pub struct CanvasState {
     /// The viewport (the content's visible rect on screen) at the end of last frame; the
     /// drag-select edge auto-scroll decides this frame's scroll from it (#688).
     pub(crate) viewport: Option<egui::Rect>,
+    /// Middle-click auto-scroll: the anchor (screen point) and whether the pointer has left its
+    /// dead zone while the button is still held (releasing then stops it, like Word).
+    pan: Option<(Pos2, bool)>,
+    /// The click that stopped the auto-scroll is swallowed (it doesn't move the caret or open the
+    /// context menu) until its button is released.
+    pan_swallow: bool,
     /// Pages per row last frame; when it changes the caret's page is scrolled back into view.
     pub cols: usize,
     /// The comment whose balloon is selected (its text is editable in place, like Word's).
@@ -173,6 +184,8 @@ impl Default for CanvasState {
             scroll_max: egui::Vec2::ZERO,
             scroll_request: None,
             viewport: None,
+            pan: None,
+            pan_swallow: false,
             cols: 1,
             balloon: None,
             balloon_focus: false,
@@ -781,7 +794,44 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     } else {
         egui::Vec2::ZERO
     };
-    let delta = wheel_delta + auto_delta;
+    // Middle-click scrolls on its own (Word's scroll anchor): the further the pointer from the
+    // anchor, the faster the page moves; a click, Esc, or releasing a held drag stops it.
+    let (mid_pressed, mid_down, other_pressed, esc) = ui.input(|i| {
+        (
+            i.pointer.button_pressed(egui::PointerButton::Middle),
+            i.pointer.middle_down(),
+            i.pointer.button_pressed(egui::PointerButton::Primary) || i.pointer.button_pressed(egui::PointerButton::Secondary),
+            i.key_pressed(egui::Key::Escape),
+        )
+    });
+    if let Some((anchor, moved)) = app.canvas.pan {
+        let far = pointer.is_some_and(|p| (p - anchor).length() > PAN_DEAD);
+        if mid_pressed || other_pressed || esc || (moved && !mid_down) {
+            app.canvas.pan = None;
+            app.canvas.pan_swallow = other_pressed;
+        } else if far && mid_down && !moved {
+            app.canvas.pan = Some((anchor, true));
+        }
+    } else if mid_pressed && hovered && (app.canvas.scroll_max.x > 0.0 || app.canvas.scroll_max.y > 0.0) {
+        app.canvas.pan = pointer.map(|p| (p, false));
+    }
+    let pan_delta = match (app.canvas.pan, pointer) {
+        (Some((anchor, _)), Some(p)) => {
+            let ctx = ui.ctx();
+            ctx.set_cursor_icon(egui::CursorIcon::AllScroll);
+            let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("pan_anchor")));
+            painter.circle(anchor, 11.0, t.input, Stroke::new(1.0, t.border));
+            for dir in [-1.0f32, 1.0] {
+                let tip = anchor + vec2(0.0, dir * 7.0);
+                painter.add(egui::Shape::convex_polygon(vec![tip, tip + vec2(-3.5, -dir * 4.5), tip + vec2(3.5, -dir * 4.5)], t.icon, Stroke::NONE));
+            }
+            painter.circle_filled(anchor, 1.5, t.icon);
+            ctx.request_repaint();
+            pan_scroll(anchor, p, dt)
+        }
+        _ => egui::Vec2::ZERO,
+    };
+    let delta = wheel_delta + auto_delta + pan_delta;
     let mut scroll_area = egui::ScrollArea::both()
         .id_salt("canvas_scroll")
         .auto_shrink([false, false])
@@ -1146,8 +1196,14 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     app.canvas.focused = resp.has_focus();
     // Screen readers: the document under the canvas, with the caret (#488).
     crate::a11y::expose(app, ui.ctx(), resp.id, &layout, &rects, area);
+    // The click that stopped the auto-scroll does nothing else, as in Word.
+    let swallow = app.canvas.pan_swallow;
+    if swallow && !ui.input(|i| i.pointer.any_down()) {
+        app.canvas.pan_swallow = false;
+    }
     // Double-click the space between two pages (or the line between them) to hide or show it.
-    if resp.double_clicked()
+    if !swallow
+        && resp.double_clicked()
         && app.session.view.mode == wordcraft_layout::ViewMode::Print
         && !app.session.view.read_mode
         && let Some(p) = resp.interact_pointer_pos()
@@ -1156,14 +1212,17 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         let _ = app.run("view.hideWhiteSpace", json!({"value": !app.session.view.hide_white_space}));
     } else
     // Draw Table / Eraser own the mouse while on (no caret moves); else the usual editing.
-    if !crate::table_pen::pointer(app, ui, &resp, &rects, &layout, geo.scale) {
+    if !swallow && !crate::table_pen::pointer(app, ui, &resp, &rects, &layout, geo.scale) {
         mouse(app, ui, &resp, &rects, &layout, geo.scale);
     }
     // A click on a check box ticks it; on a list's button opens the list.
-    crate::content_controls::clicks(app, &resp);
+    if !swallow {
+        crate::content_controls::clicks(app, &resp);
+    }
     // Right-click: move the caret there (unless inside the selection), then the context menu.
     // Right-click in an equation puts the caret there and opens the equation menu.
-    if resp.secondary_clicked()
+    if !swallow
+        && resp.secondary_clicked()
         && let Some(p) = resp.interact_pointer_pos()
         && let Some((page, x, y)) = page_at(&rects, &layout, geo.scale, p)
     {
@@ -1179,7 +1238,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         }
     }
     // Right-click on a picture, shape or text box selects it (its menu offers Wrap Text).
-    if resp.secondary_clicked()
+    if !swallow
+        && resp.secondary_clicked()
         && app.session.math.is_none()
         && let Some(p) = resp.interact_pointer_pos()
         && let Some((page, x, y)) = page_at(&rects, &layout, geo.scale, p)
@@ -1196,7 +1256,9 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
             app.canvas.context_synonyms = app.session.run("review.thesaurus", &json!({})).ok().and_then(|v| v.get("synonyms").cloned());
         }
     }
-    resp.context_menu(|ui| context_menu(app, ui));
+    if !swallow {
+        resp.context_menu(|ui| context_menu(app, ui));
+    }
     // Stand down while the context menu owns the pointer so the two never double up;
     // `context_menu_opened` also covers the click that dismisses the menu.
     app.canvas.context_menu_open = resp.context_menu_opened();
@@ -1598,6 +1660,21 @@ fn edge_scroll(p: f32, lo: f32, hi: f32, dt: f32) -> f32 {
     } else {
         0.0
     }
+}
+
+/// The middle-click auto-scroll for a pointer at `p` with the anchor at `anchor`, in the wheel's
+/// convention: nothing inside the [`PAN_DEAD`] zone, then growing with the distance (per axis) and
+/// capped, applied over `dt` seconds. Junk numbers scroll nothing.
+fn pan_scroll(anchor: Pos2, p: Pos2, dt: f32) -> egui::Vec2 {
+    if !(anchor.x.is_finite() && anchor.y.is_finite() && p.x.is_finite() && p.y.is_finite() && dt.is_finite()) {
+        return egui::Vec2::ZERO;
+    }
+    let dt = dt.clamp(0.0, EDGE_MAX_DT);
+    let axis = |d: f32| {
+        let beyond = (d.abs() - PAN_DEAD).max(0.0);
+        if beyond == 0.0 { 0.0 } else { -d.signum() * (beyond * PAN_GAIN).min(PAN_MAX) * dt }
+    };
+    vec2(axis(p.x - anchor.x), axis(p.y - anchor.y))
 }
 
 /// The scroll offset after `delta` (the wheel's convention) reaches `before`: clamped to the
@@ -2691,6 +2768,26 @@ mod tests {
         ] {
             assert!(!is_followable_link(bad), "{bad:?}");
         }
+    }
+
+    /// Middle-click auto-scroll: still in the dead zone, scrolling on below the anchor and back
+    /// above it, faster the further away, capped, and calm on junk input.
+    #[test]
+    fn middle_click_pan_scrolls_with_distance_from_the_anchor() {
+        let a = pos2(300.0, 300.0);
+        let dt = 1.0 / 60.0;
+        assert_eq!(pan_scroll(a, a + vec2(0.0, PAN_DEAD), dt), egui::Vec2::ZERO);
+        assert_eq!(pan_scroll(a, a + vec2(5.0, -5.0), dt), egui::Vec2::ZERO);
+        assert!(pan_scroll(a, a + vec2(0.0, 40.0), dt).y < 0.0, "below the anchor scrolls on");
+        assert!(pan_scroll(a, a + vec2(0.0, -40.0), dt).y > 0.0, "above it scrolls back");
+        assert_eq!(pan_scroll(a, a + vec2(0.0, 40.0), dt).x, 0.0);
+        let near = pan_scroll(a, a + vec2(0.0, 40.0), dt).y.abs();
+        let far = pan_scroll(a, a + vec2(0.0, 120.0), dt).y.abs();
+        assert!(far > near);
+        assert_eq!(pan_scroll(a, a + vec2(0.0, 1e6), dt).y, -PAN_MAX * dt, "the speed caps");
+        assert!(pan_scroll(a, a + vec2(0.0, 1e6), 100.0).y.abs() <= PAN_MAX * EDGE_MAX_DT + 1e-3);
+        assert_eq!(pan_scroll(a, pos2(f32::NAN, 5.0), dt), egui::Vec2::ZERO);
+        assert_eq!(pan_scroll(a, a + vec2(0.0, 50.0), f32::INFINITY), egui::Vec2::ZERO);
     }
 
     /// #688: the drag auto-scroll waits in the middle, ramps in from both edges and never leaves

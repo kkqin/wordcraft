@@ -708,6 +708,28 @@ fn style_rfonts_without_ascii_inherits_doc_defaults_font() {
 }
 
 #[test]
+fn latent_quick_styles_appear_in_the_gallery() {
+    // A file that defines only Normal but lists heading 1 / Title as `qFormat` latent styles (WPS,
+    // Zotero exports): Word shows them in the Styles gallery, so we add our built-ins for them.
+    let styles = format!(
+        r#"<w:styles {W_NS}>
+ <w:latentStyles w:defQFormat="0" w:defSemiHidden="1">
+  <w:lsdException w:name="heading 1" w:qFormat="1" w:semiHidden="0"/>
+  <w:lsdException w:name="Title" w:qFormat="1" w:semiHidden="0"/>
+  <w:lsdException w:name="heading 2" w:semiHidden="0"/>
+  <w:lsdException w:name="Bogus Style" w:qFormat="1"/>
+ </w:latentStyles>
+ <w:style w:type="paragraph" w:default="1" w:styleId="a"><w:name w:val="Normal"/><w:qFormat/></w:style>
+</w:styles>"#
+    );
+    let d = wordcraft_docx::read(&docx("<w:p/>", &[("rId1", "styles", "styles.xml")], &[("word/styles.xml", &styles)])).unwrap();
+    let names: Vec<String> = d.styles.gallery().iter().map(|s| s.name.clone()).collect();
+    assert!(names.contains(&"Heading 1".to_string()) && names.contains(&"Title".to_string()), "{names:?}");
+    assert!(!names.contains(&"Heading 2".to_string()) && !names.contains(&"Bogus Style".to_string()), "{names:?}");
+    assert_eq!(names.iter().filter(|n| *n == "Normal").count(), 1);
+}
+
+#[test]
 fn bare_break_directly_in_paragraph() {
     let body = r#"<w:p><w:r><w:t>First</w:t></w:r><w:br/><w:r><w:t>Second</w:t></w:r><w:cr/><w:br w:type="page"/><w:r><w:t>Third</w:t></w:r></w:p>"#;
     let d = read_body(body);

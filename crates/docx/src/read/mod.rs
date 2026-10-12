@@ -489,6 +489,31 @@ pub(crate) fn ui_style_name(n: &str) -> String {
     n.to_string()
 }
 
+/// Word lists latent styles (`w:latentStyles`) the file never defined: built-ins such as Heading 1
+/// or Title that appear in the Styles gallery (`qFormat`) and are created on first use. Add our
+/// built-in definition of each visible one that the stylesheet lacks (by id or name).
+fn add_latent_quick_styles(sheet: &mut StyleSheet, latent: Option<&El>) {
+    let Some(latent) = latent else { return };
+    let on = |e: &El, a: &str| e.attr(a).is_some_and(|v| v == "1" || v == "true" || v == "on");
+    let builtin = StyleSheet::builtin();
+    for e in latent.children("w:lsdException").take(1_000) {
+        let Some(name) = e.attr("w:name") else { continue };
+        if !on(e, "w:qFormat") || on(e, "w:semiHidden") {
+            continue;
+        }
+        let ui = ui_style_name(name);
+        let Some(b) = builtin.styles.iter().find(|s| s.kind != StyleKind::Table && s.name.eq_ignore_ascii_case(&ui)) else { continue };
+        if sheet.styles.iter().any(|s| s.id == b.id || s.name.eq_ignore_ascii_case(&b.name)) {
+            continue;
+        }
+        let mut st = b.clone();
+        st.quick = true;
+        let linked = st.linked.as_deref().and_then(|l| builtin.get(l)).filter(|l| sheet.get(&l.id).is_none()).cloned();
+        sheet.styles.push(st);
+        sheet.styles.extend(linked);
+    }
+}
+
 impl Reader<'_> {
     /// Keep the parts the VBA project at `project` relates to, with their relationship types and
     /// content types (see [`VBA_RELATED`]). Parts outside `word/`, relationship parts, the project
@@ -770,6 +795,7 @@ impl Reader<'_> {
             }
             sheet.styles.push(st);
         }
+        add_latent_quick_styles(&mut sheet, root.child("w:latentStyles"));
         self.doc.styles = sheet;
         Ok(())
     }

@@ -829,6 +829,29 @@ fn icon_text_button_with(ui: &mut Ui, icon: &str, text: &str, font: egui::FontId
     resp
 }
 
+/// The font-size box's list: in a Chinese interface the 号数 names (初号 … 八号) above the point
+/// sizes, as in Word; otherwise the point sizes.
+pub fn size_items() -> Vec<String> {
+    use wordcraft_engine::cmd::format::{CJK_SIZES, SIZES};
+    let mut items: Vec<String> = Vec::new();
+    if crate::i18n::current().code().starts_with("zh") {
+        items.extend(CJK_SIZES.iter().map(|(n, _)| (*n).to_string()));
+    }
+    items.extend(SIZES.iter().map(|s| if s.fract() == 0.0 { format!("{s:.0}") } else { s.to_string() }));
+    items
+}
+
+/// The font-size box's text for a size in points: its 号数 name in a Chinese interface (22 → 二号)
+/// when it has one, else the number.
+pub fn size_text(pt: f64) -> String {
+    if crate::i18n::current().code().starts_with("zh")
+        && let Some(n) = wordcraft_engine::cmd::format::cjk_size_name(pt as f32)
+    {
+        return n.to_string();
+    }
+    if pt.fract() == 0.0 { format!("{pt:.0}") } else { pt.to_string() }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

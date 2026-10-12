@@ -1104,3 +1104,16 @@ fn bundled_interface_fonts_cover_italian_letters() {
         }
     }
 }
+
+#[test]
+fn the_size_box_lists_chinese_size_names_in_a_chinese_interface() {
+    set_current(lang("zh-hans"));
+    let items = crate::widgets::size_items();
+    assert_eq!(items.first().map(String::as_str), Some("初号"));
+    assert!(items.contains(&"八号".to_string()) && items.contains(&"12".to_string()));
+    assert_eq!(crate::widgets::size_text(22.0), "二号");
+    assert_eq!(crate::widgets::size_text(11.0), "11");
+    set_current(Lang::EN);
+    assert_eq!(crate::widgets::size_items().first().map(String::as_str), Some("8"));
+    assert_eq!(crate::widgets::size_text(22.0), "22");
+}

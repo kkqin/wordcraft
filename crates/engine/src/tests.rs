@@ -4277,3 +4277,26 @@ fn format_font_sets_the_asian_and_latin_fonts_separately() {
     assert_eq!(fonts(&s), before);
     assert!(s.run("format.font", &json!({})).is_err() && s.run("format.font", &json!({"eastAsia": " "})).is_err());
 }
+
+#[test]
+fn font_size_accepts_chinese_size_names() {
+    use crate::cmd::format::{cjk_size_name, parse_size};
+    assert_eq!(parse_size("二号"), Some(22.0));
+    assert_eq!(parse_size(" 小四 "), Some(12.0));
+    assert_eq!(parse_size("初號"), Some(42.0), "the traditional 號 too");
+    assert_eq!(parse_size("八号"), Some(5.0));
+    assert_eq!(parse_size("10.5"), Some(10.5));
+    assert_eq!(parse_size("12pt"), Some(12.0));
+    for bad in ["", "九号", "号", "abc", "NaN", "inf"] {
+        assert_eq!(parse_size(bad), None, "{bad:?}");
+    }
+    assert_eq!(cjk_size_name(22.0), Some("二号"));
+    assert_eq!(cjk_size_name(10.5), Some("五号"));
+    assert_eq!(cjk_size_name(11.0), None);
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "Title"}));
+    run(&mut s, "select.text", json!({"text": "Title"}));
+    run(&mut s, "format.size", json!({"size": "二号"}));
+    assert_eq!(s.doc.para_at(&Pos::body(0, 0)).unwrap().runs[0].props.size, Some(22.0));
+    assert!(s.run("format.size", &json!({"size": "九号"})).is_err());
+}

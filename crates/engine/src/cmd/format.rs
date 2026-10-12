@@ -12,6 +12,43 @@ use crate::{CmdError, CmdResult, CommandSpec, Session, p};
 /// Word's font size list.
 pub const SIZES: [f32; 17] = [8.0, 9.0, 10.0, 10.5, 11.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 36.0, 48.0, 72.0];
 
+/// The Chinese font-size names (号数) and their sizes in points, largest first: 初号 is 42 pt, 八号
+/// 5 pt. Word's Chinese interface lists them above the numbers.
+pub const CJK_SIZES: [(&str, f32); 16] = [
+    ("初号", 42.0),
+    ("小初", 36.0),
+    ("一号", 26.0),
+    ("小一", 24.0),
+    ("二号", 22.0),
+    ("小二", 18.0),
+    ("三号", 16.0),
+    ("小三", 15.0),
+    ("四号", 14.0),
+    ("小四", 12.0),
+    ("五号", 10.5),
+    ("小五", 9.0),
+    ("六号", 7.5),
+    ("小六", 6.5),
+    ("七号", 5.5),
+    ("八号", 5.0),
+];
+
+/// The Chinese name of a size in points (22 → 二号), when it has one.
+pub fn cjk_size_name(pt: f32) -> Option<&'static str> {
+    CJK_SIZES.iter().find(|(_, s)| (s - pt).abs() < 0.01).map(|(n, _)| *n)
+}
+
+/// A font size typed or chosen as text: points (`12`, `10.5`, `12pt`) or a Chinese name (`二号`,
+/// `小四`; the traditional `號` too). `None` for anything else, including non-finite numbers.
+pub fn parse_size(text: &str) -> Option<f32> {
+    let t = text.trim();
+    let name = t.replace('號', "号");
+    if let Some((_, s)) = CJK_SIZES.iter().find(|(n, _)| *n == name) {
+        return Some(*s);
+    }
+    t.strip_suffix("pt").unwrap_or(t).trim().parse::<f32>().ok().filter(|x| x.is_finite())
+}
+
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         CommandSpec::new("format.bold", "Bold", "Home › Font", |s, v| {
@@ -95,7 +132,9 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("format.emboss", "Emboss", "Home › Font › Font", |s, v| toggle(s, v, |r| r.emboss, |c, on| c.emboss = Some(on))),
         CommandSpec::new("format.engrave", "Engrave", "Home › Font › Font", |s, v| toggle(s, v, |r| r.engrave, |c, on| c.engrave = Some(on))),
         CommandSpec::new("format.font", "Font", "Home › Font", font).key("Mod+Shift+F").params(r#"{"name"?: string, "eastAsia"?: string}"#),
-        CommandSpec::new("format.size", "Font Size", "Home › Font", size).key("Mod+Shift+P").params(r#"{"size": number}"#),
+        CommandSpec::new("format.size", "Font Size", "Home › Font", size)
+            .key("Mod+Shift+P")
+            .params(r#"{"size": number | string (points, or a Chinese size name such as 二号)}"#),
         CommandSpec::new("format.growFont", "Increase Font Size", "Home › Font", |s, _| step_size(s, 1)).key("Mod+Shift+. / Mod+Shift+>"),
         CommandSpec::new("format.shrinkFont", "Decrease Font Size", "Home › Font", |s, _| step_size(s, -1)).key("Mod+Shift+, / Mod+Shift+<"),
         CommandSpec::new("format.growFont1", "Grow Font 1 Point", "Home › Font", |s, _| nudge_size(s, 1.0)).key("Mod+]"),
@@ -310,7 +349,10 @@ fn font(s: &mut Session, v: &Value) -> CmdResult {
 }
 
 fn size(s: &mut Session, v: &Value) -> CmdResult {
-    let sz = p::req_f32(v, "size")?;
+    // A number of points, or text: "12", "10.5pt" or a Chinese name such as "二号".
+    let sz = p::f32(v, "size")
+        .or_else(|| p::str(v, "size").and_then(parse_size))
+        .ok_or_else(|| CmdError::Params("`size` (points, or a name such as 二号) is required".into()))?;
     if !(1.0..=1638.0).contains(&sz) {
         return Err(CmdError::Params("size must be between 1 and 1638".into()));
     }

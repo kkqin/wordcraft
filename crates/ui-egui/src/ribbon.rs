@@ -527,15 +527,10 @@ fn home(app: &mut WordApp, ui: &mut Ui) {
                         app.run("format.font", json!({"name": f}))
                     };
                 }
-                let size = st
-                    .get("size")
-                    .and_then(Value::as_f64)
-                    .map(|s| if s.fract() == 0.0 { format!("{s:.0}") } else { format!("{s}") })
-                    .unwrap_or_default();
-                let sizes: Vec<String> =
-                    wordcraft_engine::cmd::format::SIZES.iter().map(|s| if s.fract() == 0.0 { format!("{s:.0}") } else { s.to_string() }).collect();
+                let size = st.get("size").and_then(Value::as_f64).map(crate::widgets::size_text).unwrap_or_default();
+                let sizes = crate::widgets::size_items();
                 if let Some(v) = combo(ui, "size", 52.0, &size, &sizes, None)
-                    && let Ok(x) = v.trim().parse::<f64>()
+                    && let Some(x) = wordcraft_engine::cmd::format::parse_size(&v)
                 {
                     let _ = app.run("format.size", json!({"size": x}));
                 }

@@ -143,12 +143,10 @@ fn content(app: &mut WordApp, ui: &mut egui::Ui, t: &Tokens) {
                 app.run("format.font", json!({"name": f}))
             };
         }
-        let size =
-            st.get("size").and_then(Value::as_f64).map(|s| if s.fract() == 0.0 { format!("{s:.0}") } else { s.to_string() }).unwrap_or_default();
-        let sizes: Vec<String> =
-            wordcraft_engine::cmd::format::SIZES.iter().map(|s| if s.fract() == 0.0 { format!("{s:.0}") } else { s.to_string() }).collect();
+        let size = st.get("size").and_then(Value::as_f64).map(widgets::size_text).unwrap_or_default();
+        let sizes = widgets::size_items();
         if let Some(v) = widgets::combo(ui, "mini_size", COMBO_SIZE_W, &size, &sizes, None)
-            && let Ok(x) = v.trim().parse::<f64>()
+            && let Some(x) = wordcraft_engine::cmd::format::parse_size(&v)
         {
             let _ = app.run("format.size", json!({"size": x}));
         }

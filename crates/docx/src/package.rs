@@ -162,7 +162,8 @@ impl Package {
             if f.is_dir() {
                 continue;
             }
-            let name = f.name().trim_start_matches('/').to_string();
+            // Some Windows tools write `word\styles.xml`; Word reads those, so normalise to `/`.
+            let name = f.name().replace('\\', "/").trim_start_matches('/').to_string();
             if f.size() > max_part {
                 return Err(DocxError::Limit(format!("part {name} declares {} bytes", f.size())));
             }
@@ -350,6 +351,15 @@ mod tests {
     fn zip_of(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
         let e: Vec<(String, Vec<u8>)> = entries.iter().map(|(n, b)| (n.to_string(), b.clone())).collect();
         zip_entries(&e).unwrap()
+    }
+
+    #[test]
+    fn backslash_part_names_are_normalised() {
+        // Some Windows tools write `word\styles.xml`; Word reads those parts as `word/styles.xml`.
+        let z = zip_of(&[("word\\styles.xml", b"<s/>".to_vec()), ("word/document.xml", b"<d/>".to_vec())]);
+        let p = Package::open(&z).unwrap();
+        assert_eq!(p.get("word/styles.xml"), Some(&b"<s/>"[..]));
+        assert_eq!(p.get("word/document.xml"), Some(&b"<d/>"[..]));
     }
 
     #[test]

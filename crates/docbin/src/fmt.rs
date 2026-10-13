@@ -244,6 +244,23 @@ pub(crate) fn apply_para(p: &mut ParaProps, prl: &Prl) {
     let tw = |v: i32| (v as f32 / 20.0).clamp(-1000.0, 1000.0);
     let s16 = |prl: &Prl| -> Option<i16> { u16_of(prl).map(|v| v as i16) };
     match prl.op {
+        // Paragraph borders: the Word 97 form (sprmPBrc*80, a 4-byte Brc80) and Word 2000's (sprmPBrc*,
+        // a length byte and an 8-byte Brc), which comes later in the grpprl and wins.
+        0x6424..=0x6428 | 0xC64E..=0xC652 => {
+            let new = prl.op >= 0xC64E;
+            let side = usize::from(if new { prl.op - 0xC64E } else { prl.op - 0x6424 });
+            let border = if new { prl.operand.get(1..9).and_then(crate::table::brc) } else { crate::table::brc80(prl.operand) };
+            if let Some(border) = border {
+                let b = p.borders.get_or_insert_with(Default::default);
+                *match side {
+                    0 => &mut b.top,
+                    1 => &mut b.left,
+                    2 => &mut b.bottom,
+                    3 => &mut b.right,
+                    _ => &mut b.between,
+                } = Some(border);
+            }
+        }
         sprm::P_CHG_TABS | sprm::P_CHG_TABS_PAPX => change_tabs(p, prl),
         P_JC | P_JC80 => {
             p.align = match prl.operand.first().copied().unwrap_or(0) {

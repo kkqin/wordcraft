@@ -970,6 +970,31 @@ fn section_document_grid_is_read() {
     assert!(doc.last_section.doc_grid.is_none_or(|g| g.kind == DocGridType::Default));
 }
 
+/// A paragraph's bottom border, in both the Word 97 form (Brc80) and Word 2000's (Brc): the rule a
+/// header or a title sits on.
+#[test]
+fn paragraph_borders_are_read() {
+    use wordcraft_doc::props::BorderStyle;
+    // sprmPBrcBottom80 (0x6426): 6/8 pt single, auto colour, 1 pt space; sprmPBrcBottom (0xC650): 8 bytes
+    // after a length byte, a red 1.5 pt (12/8) single line.
+    let brc80 = [6u8, 1, 0, 1];
+    let brc = [8u8, 0xFF, 0, 0, 0, 12, 1, 2, 0];
+    let spec = RichSpec {
+        text: "old\rnew\r",
+        styles: vec![(1, 0x0FFF, "Normal", Vec::new(), Vec::new())],
+        fonts: vec!["Times New Roman"],
+        chpx_runs: vec![(0, Vec::new())],
+        papx_entries: vec![(3, 0, grpprl(&[(0x6426, &brc80)])), (7, 0, grpprl(&[(0x6426, &brc80), (0xC650, &brc)]))],
+    };
+    let doc = read(&rich_doc(&spec)).expect("opens");
+    let paras: Vec<_> = doc.body.iter().filter_map(|b| b.as_para()).collect();
+    let old = paras[0].props.borders.and_then(|b| b.bottom).expect("a bottom border");
+    assert_eq!((old.style, old.width, old.color, old.space), (BorderStyle::Single, 0.75, None, 1.0));
+    assert!(paras[0].props.borders.is_some_and(|b| b.top.is_none() && b.left.is_none()));
+    let new = paras[1].props.borders.and_then(|b| b.bottom).expect("a bottom border");
+    assert_eq!((new.width, new.color, new.space), (1.5, Some(wordcraft_doc::Rgb(0xFF, 0, 0)), 2.0), "the newer form wins");
+}
+
 #[test]
 fn two_sections_box_the_first() {
     let spec = StructSpec {

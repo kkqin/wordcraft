@@ -367,7 +367,7 @@ fn table_borders(operand: &[u8]) -> Option<Borders> {
 }
 
 /// One Brc80: width in 1/8 pt, type, palette colour, space/flags byte.
-fn brc80(b: &[u8]) -> Option<Border> {
+pub(crate) fn brc80(b: &[u8]) -> Option<Border> {
     let [w, ty, ico, flags] = b else { return None };
     let style = match ty {
         0x00 => BorderStyle::None,
@@ -384,6 +384,16 @@ fn brc80(b: &[u8]) -> Option<Border> {
         return None;
     }
     Some(Border { style, width: (*w as f32 / 8.0).clamp(0.25, 12.0), color: fmt::ico(*ico), space: (flags & 0x1F) as f32 })
+}
+
+/// One `Brc` (8 bytes, [MS-DOC] §2.9.20): a COLORREF (0xFF in its last byte = automatic), the
+/// width in 1/8 pt, the type, and the space in points (low 5 bits of the flags). The same type
+/// codes as [`brc80`].
+pub(crate) fn brc(b: &[u8]) -> Option<Border> {
+    let [r, g, bl, auto, w, ty, flags, _] = b else { return None };
+    let mut border = brc80(&[*w, *ty, 0, *flags])?;
+    border.color = if *auto == 0xFF { None } else { Some(Rgb(*r, *g, *bl)) };
+    Some(border)
 }
 
 /// Background colour from a 10-byte `Shd`: cvFore, cvBack (COLORREFs), ipat. Solid patterns

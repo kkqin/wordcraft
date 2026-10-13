@@ -38,7 +38,10 @@ struct RawLvl {
 /// A bullet level's character, with the 0xF000 flag bits stripped and the common
 /// Symbol/Wingdings glyphs mapped to their Unicode equivalents so every font renders them.
 fn bullet_char(c: u16) -> char {
-    match c & 0x0FFF {
+    // Only a Symbol/Wingdings code (U+F0xx, the private-use area) carries the flag bits; any other
+    // character is itself: the 、 of 一、 and the 第 and 节 of 第一节.
+    let c = if (0xF000..=0xF0FF).contains(&c) { c & 0xFF } else { c };
+    match c {
         0xB7 => '\u{2022}',        // Symbol bullet
         0xA7 => '\u{25AA}',        // Wingdings small square
         0x6F => '\u{25CB}',        // Symbol open circle
@@ -57,6 +60,26 @@ fn num_format(nfc: u8) -> NumFormat {
         0x00..=0x27 => NumFormat::ALL.get(nfc as usize).copied().unwrap_or(NumFormat::Decimal),
         _ => NumFormat::Decimal,
     }
+}
+
+#[cfg(test)]
+#[test]
+fn level_text_keeps_its_own_characters() {
+    // 一、 (japaneseCounting: the placeholder, then the ideographic comma) and 第%1节 (CJK text
+    // around the placeholder).
+    let at = |xst: &[u16], first: u8| {
+        let mut nums = [0u8; 9];
+        nums[0] = first;
+        let l =
+            RawLvl { start: 1, nfc: 0x0B, jc: 0, flags: 0, ixch_follow: 0, rgbxch_nums: nums, papx: Vec::new(), chpx: Vec::new(), xst: xst.to_vec() };
+        level_of(&l, 0, &[]).text
+    };
+    assert_eq!(at(&[0, 0x3001], 1), "%1、");
+    assert_eq!(at(&[0x7B2C, 0, 0x8282, 0x20], 2), "第%1节 ");
+    assert_eq!(at(&[0, 0x29], 1), "%1)");
+    // Symbol/Wingdings bullets still lose their F0 flag and map to a Unicode bullet.
+    assert_eq!(at(&[0xF0B7], 0), "\u{2022}");
+    assert_eq!(at(&[0x2022], 0), "\u{2022}");
 }
 
 #[cfg(test)]

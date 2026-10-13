@@ -942,6 +942,34 @@ fn section_props_parsed() {
     assert_eq!(doc.last_section.margin_left, 72.0);
 }
 
+/// The document grid (a Chinese template's "lines" grid): line heights snap to the pitch, which
+/// roughly doubles a 14 pt line on a 15.6 pt pitch.
+#[test]
+fn section_document_grid_is_read() {
+    use wordcraft_doc::section::DocGridType;
+    let spec = StructSpec {
+        text: "a\rb\r",
+        header_stories: vec![],
+        sections: vec![(2, grpprl(&[(0x5032, &2u16.to_le_bytes()), (0x9031, &312u16.to_le_bytes())]))],
+        chpx_runs: vec![(0, Vec::new())],
+        papx_entries: vec![(0, 0, Vec::new()), (2, 0, Vec::new())],
+        plf_lst: Vec::new(),
+        plf_lfo: Vec::new(),
+        note_stories: vec![],
+        endnote_stories: vec![],
+        extra_pairs: Vec::new(),
+        data_stream: Vec::new(),
+    };
+    let doc = read(&struct_doc(&spec)).expect("opens");
+    let g = doc.last_section.doc_grid.expect("a grid");
+    assert_eq!(g.kind, DocGridType::Lines);
+    assert_eq!(g.line_pitch, 15.6);
+    // Clm 0 is no grid; pitch alone keeps the default kind.
+    let none = StructSpec { sections: vec![(2, grpprl(&[(0x5032, &0u16.to_le_bytes())]))], ..spec };
+    let doc = read(&struct_doc(&none)).expect("opens");
+    assert!(doc.last_section.doc_grid.is_none_or(|g| g.kind == DocGridType::Default));
+}
+
 #[test]
 fn two_sections_box_the_first() {
     let spec = StructSpec {

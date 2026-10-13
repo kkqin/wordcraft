@@ -2,7 +2,7 @@
 //! the `Plcfhdd` stories of the header subdocument ([MS-DOC] §2.8.25, §2.9.244).
 
 use wordcraft_doc::section::NumFormat;
-use wordcraft_doc::section::{Columns, SectionProps, SectionStart};
+use wordcraft_doc::section::{Columns, DocGrid, DocGridType, MAX_GRID_PITCH, SectionProps, SectionStart};
 
 use crate::fib::{Fib, pair};
 use crate::sprm::{self, Prl};
@@ -25,6 +25,8 @@ const S_DXA_RIGHT: u16 = 0xB022;
 const S_DYA_TOP: u16 = 0x9023;
 const S_DYA_BOTTOM: u16 = 0x9024;
 const S_DXA_GUTTER: u16 = 0xB025;
+const S_CLM: u16 = 0x5032; // sprmSClm: the document grid
+const S_DYA_LINE_PITCH: u16 = 0x9031; // sprmSDyaLinePitch
 
 /// One section: covers paragraphs up to (excluding) `end_cp`, with its properties.
 pub(crate) struct Section {
@@ -161,6 +163,22 @@ fn apply_section(s: &mut SectionProps, prl: &Prl) {
         S_DXA_GUTTER => {
             if let Some(v) = s16(prl) {
                 s.gutter = tw(v as i32);
+            }
+        }
+        // The document grid: 2 snaps line heights to the pitch, 3 also places East Asian characters
+        // on a character pitch (0 none; a character-only grid isn't modelled). The character
+        // pitch (sprmSDxtCharSpace) isn't read, so the characters keep their font's size.
+        S_CLM => {
+            let kind = match s16(prl) {
+                Some(2) => DocGridType::Lines,
+                Some(3) => DocGridType::LinesAndChars,
+                _ => DocGridType::Default,
+            };
+            s.doc_grid.get_or_insert_with(DocGrid::default).kind = kind;
+        }
+        S_DYA_LINE_PITCH => {
+            if let Some(v) = s16(prl).filter(|v| *v > 0) {
+                s.doc_grid.get_or_insert_with(DocGrid::default).line_pitch = tw(v as i32).min(MAX_GRID_PITCH);
             }
         }
         _ => {}

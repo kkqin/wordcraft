@@ -114,6 +114,9 @@ pub struct Cluster {
     pub g1: u32,
     /// A line may break after this cluster.
     pub break_after: bool,
+    /// A justified line may widen the gap after this cluster: East Asian text, which Word spreads
+    /// between characters (no spaces to stretch), except where kinsoku keeps two characters tight.
+    pub just_gap: bool,
     /// Height above the baseline for objects (images), points.
     pub obj_h: f32,
     /// Depth below the baseline for objects (equations), points.
@@ -862,6 +865,7 @@ impl<'a> Builder<'a> {
                 // Clusters index the document text, never the displayed text.
                 let (cs, ce) = if substituted { remap_range(&map_starts, &orig_of, sub.len(), gs, ge) } else { (gs, ge) };
                 self.clusters.push(Cluster {
+                    just_gap: false,
                     start: base + a + cs,
                     end: base + a + ce,
                     adv,
@@ -887,6 +891,7 @@ impl<'a> Builder<'a> {
             let si = self.style(rc, None, false);
             let g = self.glyphs.len() as u32;
             self.clusters.push(Cluster {
+                just_gap: false,
                 start,
                 end,
                 adv: 0.0,
@@ -923,7 +928,20 @@ impl<'a> Builder<'a> {
         let style = first.style;
         let g1 = added.last().map(|c| c.g1).unwrap_or(g0);
         self.shown.push((self.clusters.len(), text.to_string(), ranges));
-        self.clusters.push(Cluster { start, end, adv: x, kind: ClKind::Text, style, g0, g1, break_after: false, obj_h: 0.0, obj_d: 0.0, dot: false });
+        self.clusters.push(Cluster {
+            just_gap: false,
+            start,
+            end,
+            adv: x,
+            kind: ClKind::Text,
+            style,
+            g0,
+            g1,
+            break_after: false,
+            obj_h: 0.0,
+            obj_d: 0.0,
+            dot: false,
+        });
     }
 
     /// Shape `texts` on top of one another as one cluster for `start..end`: each aligned within
@@ -976,7 +994,20 @@ impl<'a> Builder<'a> {
         if !text.is_empty() {
             self.shown.push((k, text, ranges));
         }
-        self.clusters.push(Cluster { start, end, adv, kind: ClKind::Text, style, g0, g1, break_after: false, obj_h: 0.0, obj_d: 0.0, dot: false });
+        self.clusters.push(Cluster {
+            just_gap: false,
+            start,
+            end,
+            adv,
+            kind: ClKind::Text,
+            style,
+            g0,
+            g1,
+            break_after: false,
+            obj_h: 0.0,
+            obj_d: 0.0,
+            dot: false,
+        });
         Some(k)
     }
 }
@@ -1221,6 +1252,7 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
                     notes.push((b.clusters.len(), id));
                 }
                 b.clusters.push(Cluster {
+                    just_gap: false,
                     start: range.start + i,
                     end: range.start + i + c.len_utf8(),
                     adv: 0.0,
@@ -1274,7 +1306,20 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
             let si = b.style(&rc, None, false);
             let g = b.glyphs.len() as u32;
             let push = |b: &mut Builder, kind: ClKind, adv: f32, h: f32| {
-                b.clusters.push(Cluster { start, end, adv, kind, style: si, g0: g, g1: g, break_after: false, obj_h: h, obj_d: 0.0, dot: false })
+                b.clusters.push(Cluster {
+                    just_gap: false,
+                    start,
+                    end,
+                    adv,
+                    kind,
+                    style: si,
+                    g0: g,
+                    g1: g,
+                    break_after: false,
+                    obj_h: h,
+                    obj_d: 0.0,
+                    dot: false,
+                })
             };
             match c {
                 '\t' => push(&mut b, ClKind::Tab, 0.0, 0.0),
@@ -1344,6 +1389,7 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
                             // The line is at least as tall as the text around it.
                             let (a, d) = st.map(|s| (s.ascent, s.descent)).unwrap_or((0.0, 0.0));
                             b.clusters.push(Cluster {
+                                just_gap: false,
                                 start,
                                 end,
                                 adv: ml.width,
@@ -1435,6 +1481,22 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
     let opps: std::collections::HashSet<usize> = found.into_iter().filter_map(to_para).collect();
     for c in &mut b.clusters {
         c.break_after = opps.contains(&c.end) || matches!(c.kind, ClKind::Object(_) | ClKind::Tab);
+    }
+    // Where a justified line may widen the gap between two East Asian characters.
+    for k in 0..b.clusters.len().saturating_sub(1) {
+        let edge = |c: &Cluster| p.text.get(c.start..c.end).filter(|_| c.kind == ClKind::Text);
+        let (Some(cur), Some(next)) = (b.clusters.get(k), b.clusters.get(k + 1)) else { continue };
+        let (Some(cur_c), Some(next_c)) = (edge(cur).and_then(|t| t.chars().next_back()), edge(next).and_then(|t| t.chars().next())) else {
+            continue;
+        };
+        let gap = (crate::kinsoku::is_east_asian(cur_c) || crate::kinsoku::is_east_asian(next_c))
+            && !cur_c.is_whitespace()
+            && !next_c.is_whitespace()
+            && !crate::kinsoku::no_end(cur_c)
+            && !crate::kinsoku::no_start(next_c);
+        if let Some(c) = b.clusters.get_mut(k) {
+            c.just_gap = gap;
+        }
     }
 
     // List label.
@@ -1947,9 +2009,13 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, level: Optio
             shrink_line_spaces(pl, &mut xs, c0, c1, content_end, slack);
         } else if justify && slack > 0.0 {
             // Spaces inside the content (after the last tab).
+            // The gaps that take the slack: spaces, and between East Asian characters (Word spreads
+            // Chinese and Japanese text between its characters).
             let spaces: Vec<usize> = (align_from..c1)
                 .filter(|k| {
-                    pl.clusters.get(*k).is_some_and(|c| c.kind == ClKind::Space) && xs.get(k - c0).copied().unwrap_or(f32::MAX) < content_end - 0.01
+                    let Some(c) = pl.clusters.get(*k) else { return false };
+                    let within = |q: usize| xs.get(q - c0).copied().unwrap_or(f32::MAX) < content_end - 0.01;
+                    (c.kind == ClKind::Space && within(*k)) || (c.just_gap && *k + 1 < c1 && within(*k + 1))
                 })
                 .collect();
             if rp.align == Align::Distribute || spaces.is_empty() {

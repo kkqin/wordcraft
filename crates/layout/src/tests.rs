@@ -2371,6 +2371,46 @@ fn justified_lines_shrink_spaces_in_word_2013_mode() {
     }
 }
 
+/// Chinese text has no spaces to stretch: Word spreads a justified line between its characters, so
+/// every line but the last reaches the margin; left-aligned text stays ragged.
+#[test]
+fn justified_east_asian_lines_reach_the_margin() {
+    let text = "电子证据检查由提取人员 abc 担任，所有的聊天信息都存储在形如数据库的表 de 中。".repeat(12);
+    let (lines, ends) = justified_lines(&text, 15, Align::Justify);
+    assert!(lines > 3, "{lines}");
+    for e in &ends[..ends.len() - 1] {
+        assert!((*e - 540.0).abs() < 0.05, "justified line ends at {e}");
+    }
+    assert!(ends.last().is_some_and(|e| *e < 539.0), "the last line stays short: {ends:?}");
+    let (_, left) = justified_lines(&text, 15, Align::Left);
+    assert!(left[..left.len() - 1].iter().any(|e| (*e - 540.0).abs() > 1.0), "left-aligned lines are ragged: {left:?}");
+}
+
+/// Which gaps a justified line may widen: between East Asian characters, but never before closing
+/// punctuation or after an opening bracket (kinsoku), nor around spaces and plain Latin letters.
+#[test]
+fn only_east_asian_gaps_widen_when_justifying() {
+    let d = Document::from_text("汉字，「汉」ab c字");
+    let l = lay(&d);
+    let mut gaps = Vec::new();
+    for p in &l.pages {
+        for it in &p.items {
+            if let Placed::Lines { para, .. } = it {
+                gaps = para.clusters.iter().map(|c| c.just_gap).collect();
+            }
+        }
+    }
+    // 汉 字 ， 「 汉 」 a b ␠ c ␠? — one flag per cluster; the characters are listed by position.
+    let chars: Vec<char> = "汉字，「汉」ab c字".chars().collect();
+    let gap_after = |c: char| gaps.get(chars.iter().position(|x| *x == c).unwrap()).copied().unwrap();
+    assert!(gap_after('汉'), "between two ideographs");
+    assert!(!gap_after('字') || chars.len() > 9, "字 is followed by a comma: no gap before closing punctuation");
+    assert!(gap_after('，'), "after a comma, before an opening bracket's character gap is decided by the bracket");
+    assert!(!gap_after('「'), "no gap after an opening bracket");
+    assert!(!gap_after('a'), "Latin letters stay together");
+    assert!(!gap_after(' '), "a space is stretched as a space, not as a gap");
+}
+
 #[test]
 fn space_shrinking_is_only_for_justified_text() {
     let text = "We tie the spend to a pipe and to the books, so it is in an ad hoc view of all of it. ".repeat(40);

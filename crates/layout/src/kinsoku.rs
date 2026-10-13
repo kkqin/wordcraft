@@ -20,6 +20,16 @@ const NO_START: &str = "、。，．・：；？！゛゜ヽヾゝゞ々〻〉�
 /// East Asian characters a line may not end with: opening brackets and quotes, currency signs.
 const NO_END: &str = "〈《「『【〔〖〘〚〝（［｛｟｢＄￡￥";
 
+/// Whether a line may not start with `c` (closing East Asian punctuation).
+pub fn no_start(c: char) -> bool {
+    NO_START.contains(c)
+}
+
+/// Whether a line may not end with `c` (opening East Asian brackets and quotes).
+pub fn no_end(c: char) -> bool {
+    NO_END.contains(c)
+}
+
 /// Whether `c` is East Asian text: CJK ideographs, kana, bopomofo, CJK punctuation, and
 /// fullwidth/halfwidth forms (not spaces, not combining sound marks).
 pub fn is_east_asian(c: char) -> bool {

@@ -364,7 +364,44 @@ pub(crate) fn stylesheet(raw: &[crate::stsh::RawStyle], fonts: &[String]) -> Sty
         }
         sheet.styles.push(Style { id, name: display_name(&st.name), kind, based_on: base, chr, para, ..Default::default() });
     }
+    add_default_quick_styles(&mut sheet, raw);
     sheet
+}
+
+/// The built-in styles Word's Styles gallery shows in a fresh document, by `sti`: Normal,
+/// Heading 1–3, Title, Subtitle, Strong and Emphasis, with the id of our built-in definition.
+const QUICK_STI: [(u16, &str); 8] =
+    [(0, "Normal"), (1, "Heading1"), (2, "Heading2"), (3, "Heading3"), (62, "Title"), (74, "Subtitle"), (87, "Strong"), (88, "Emphasis")];
+
+/// A binary file stores no gallery flag the way a docx does, and a style Word created on first
+/// use isn't in its stylesheet at all (a file with only Normal and a few table styles, as old
+/// Word 97 and WPS files have). Show the default gallery: mark those of [`QUICK_STI`] the file
+/// has, and add our built-in definition of the rest, built on the file's own Normal.
+fn add_default_quick_styles(sheet: &mut StyleSheet, raw: &[crate::stsh::RawStyle]) {
+    let normal = raw.iter().find(|s| !s.name.is_empty() && s.sti == 0 && s.stk == 1).map(|s| style_id(&s.name));
+    let builtin = StyleSheet::builtin();
+    for (sti, bid) in QUICK_STI {
+        let own = raw.iter().find(|s| !s.name.is_empty() && s.sti == sti && s.stk == if sti == 87 || sti == 88 { 2 } else { 1 });
+        if let Some(own) = own {
+            let id = style_id(&own.name);
+            if let Some(st) = sheet.styles.iter_mut().find(|s| s.id == id) {
+                st.quick = true;
+                st.priority.get_or_insert(u32::from(sti.min(99)));
+            }
+            continue;
+        }
+        let Some(b) = builtin.styles.iter().find(|s| s.id == bid) else { continue };
+        if sheet.styles.iter().any(|s| s.id == b.id) {
+            continue;
+        }
+        let mut st = b.clone();
+        st.quick = true;
+        let remap = |id: Option<String>| id.map(|i| if i == "Normal" { normal.clone() } else { Some(i) }).unwrap_or(None);
+        st.based_on = remap(st.based_on.take());
+        st.next = remap(st.next.take());
+        st.linked = None;
+        sheet.styles.push(st);
+    }
 }
 
 /// Most `istdBase` links followed; a longer chain (or a cycle) in a corrupt file stops there.

@@ -1906,3 +1906,22 @@ fn section_marks_end_paragraphs() {
     let doc = read(&struct_doc(&spec)).expect("opens");
     assert_eq!(body_texts(&doc), ["a\u{C}b"]);
 }
+
+/// A stylesheet with only a localized Normal (正文, sti 0) and no gallery flags shows Word's default
+/// gallery: Normal, plus Heading 1–3, Title, Subtitle, Strong and Emphasis built on the file's own
+/// Normal. A style the file does have keeps its own definition and is only marked.
+#[test]
+fn a_binary_stylesheet_without_quick_styles_gets_the_default_gallery() {
+    use crate::stsh::RawStyle;
+    let style = |stk, sti, name: &str| RawStyle { stk, sti, istd_base: 0x0FFF, name: name.into(), ..Default::default() };
+    let raw = vec![style(1, 0, "正文"), style(2, 65, "默认段落字体"), style(1, 2, "标题 2"), RawStyle::default(), style(1, 0x0FFE, "我的样式")];
+    let sheet = crate::fmt::stylesheet(&raw, &[]);
+    let names: Vec<String> = sheet.gallery().iter().map(|s| s.name.clone()).collect();
+    for want in ["正文", "标题 2", "Heading 1", "Heading 3", "Title", "Subtitle", "Strong", "Emphasis"] {
+        assert!(names.iter().any(|n| n == want), "{want} in {names:?}");
+    }
+    assert!(!names.iter().any(|n| n == "我的样式" || n == "Heading 2"), "{names:?}");
+    // Built on the file's Normal, not on a "Normal" it lacks.
+    assert_eq!(sheet.get("Heading1").and_then(|s| s.based_on.as_deref()), Some("正文"));
+    assert_eq!(sheet.get("Heading1").and_then(|s| s.next.as_deref()), Some("正文"));
+}

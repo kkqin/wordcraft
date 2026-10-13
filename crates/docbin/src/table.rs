@@ -318,10 +318,16 @@ pub(crate) fn assemble(paras: Vec<ParaOut>) -> Blocks {
             props.indent = info.indent;
         }
         if info.cell_mark {
-            if !p.para.text.is_empty() {
-                cell.push(para_block(p.para));
+            // Word ends a row with a mark of its own after the last cell's ([MS-DOC] §2.4.3): an
+            // empty TTP paragraph that holds no cell. (One that carries the last cell's text, or
+            // follows no cell, is that cell's own mark.)
+            let row_end_only = info.ttp && p.para.text.is_empty() && cell.is_empty() && !cells.is_empty();
+            if !row_end_only {
+                if !p.para.text.is_empty() {
+                    cell.push(para_block(p.para));
+                }
+                flush_cell(&mut cells, &mut cell);
             }
-            flush_cell(&mut cells, &mut cell);
             if info.ttp {
                 let row = build_row(std::mem::take(&mut cells), &info);
                 rows.push(row);

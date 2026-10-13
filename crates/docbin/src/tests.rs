@@ -1024,6 +1024,45 @@ fn table_assembled_from_marks() {
     assert_eq!(last.text, "tail");
 }
 
+/// Word writes each row's end as a mark of its own after the last cell's: a 2-cell row is
+/// "a\x07 b\x07 \x07" and the empty TTP mark must not become a third cell (a phantom column).
+#[test]
+fn a_rows_own_end_mark_adds_no_cell() {
+    let def_table = t_def_table(&[0, 2880, 5760]);
+    let text = "a\u{7}b\u{7}\u{7}c\u{7}d\u{7}\u{7}tail\r";
+    let in_tbl = grpprl(&[(0x2416, &[0x01])]);
+    let ttp: Vec<u8> = [grpprl(&[(0x2416, &[0x01]), (0x2417, &[0x01])]), def_table].concat();
+    let spec = StructSpec {
+        text,
+        header_stories: vec![],
+        sections: vec![(text.chars().count() as u32, Vec::new())],
+        chpx_runs: vec![(0, Vec::new())],
+        papx_entries: vec![
+            (0, 0, in_tbl.clone()),
+            (2, 0, in_tbl.clone()),
+            (4, 0, ttp.clone()), // row end
+            (5, 0, in_tbl.clone()),
+            (7, 0, in_tbl),
+            (9, 0, ttp), // row end
+            (10, 0, Vec::new()),
+        ],
+        plf_lst: Vec::new(),
+        plf_lfo: Vec::new(),
+        note_stories: vec![],
+        endnote_stories: vec![],
+        extra_pairs: Vec::new(),
+        data_stream: Vec::new(),
+    };
+    let doc = read(&struct_doc(&spec)).expect("opens");
+    let tbl = doc.body.iter().find_map(|b| b.as_table()).expect("table");
+    assert_eq!(tbl.rows.len(), 2);
+    assert!(tbl.rows.iter().all(|r| r.cells.len() == 2), "{:?}", tbl.rows.iter().map(|r| r.cells.len()).collect::<Vec<_>>());
+    assert_eq!(tbl.grid.len(), 2);
+    let cell_text = |r: usize, c: usize| tbl.rows[r].cells[c].blocks.iter().filter_map(|b| b.as_para()).map(|p| p.text.clone()).collect::<String>();
+    assert_eq!((cell_text(0, 0), cell_text(0, 1), cell_text(1, 0), cell_text(1, 1)), ("a".into(), "b".into(), "c".into(), "d".into()));
+    assert_eq!(doc.body.last().and_then(|b| b.as_para()).map(|p| p.text.as_str()), Some("tail"));
+}
+
 #[test]
 fn table_merges_borders_shading() {
     // Two rows: the first "a\x07 b\x07 c\x07" with cells 0-1 horizontally merged; the second

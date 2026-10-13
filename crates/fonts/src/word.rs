@@ -56,6 +56,13 @@ fn substitutes(family: &str) -> &'static [&'static str] {
         "DejaVu Serif",
         "Source Serif 4",
     ];
+    // Chinese document fonts. An uninstalled 仿宋_GB2312 or 华文中宋 reads as the Windows font of
+    // the same kind (FangSong, SimSun…) as Word does, then an open CJK face of that style.
+    const SONG: &[&str] = &["SimSun", "宋体", "NSimSun", "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", "Noto Serif SC"];
+    const FANGSONG: &[&str] = &["FangSong", "仿宋", "STFangsong", "SimSun", "宋体", "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC"];
+    const KAITI: &[&str] = &["KaiTi", "楷体", "STKaiti", "Kaiti SC", "SimSun", "宋体", "Noto Serif CJK SC", "Source Han Serif SC"];
+    const HEI: &[&str] = &["SimHei", "黑体", "Microsoft YaHei", "微软雅黑", "PingFang SC", "STHeiti", "Noto Sans CJK SC", "Source Han Sans SC"];
+    const YAHEI: &[&str] = &["Microsoft YaHei", "微软雅黑", "PingFang SC", "SimHei", "Noto Sans CJK SC", "Source Han Sans SC"];
     let f = family.to_ascii_lowercase();
     if is_persian_naskh(&f) {
         return NASKH;
@@ -64,6 +71,12 @@ fn substitutes(family: &str) -> &'static [&'static str] {
         return ARABIC_SANS;
     }
     match f.as_str() {
+        "宋体" | "simsun" | "新宋体" | "nsimsun" | "宋体_gb2312" | "宋体-简" | "华文中宋" | "stzhongsong" | "华文宋体" | "stsong"
+        | "方正书宋_gbk" | "方正宋体" => SONG,
+        "仿宋" | "fangsong" | "仿宋_gb2312" | "fangsong_gb2312" | "华文仿宋" | "stfangsong" | "方正仿宋_gbk" => FANGSONG,
+        "楷体" | "kaiti" | "楷体_gb2312" | "kaiti_gb2312" | "华文楷体" | "stkaiti" | "方正楷体_gbk" => KAITI,
+        "黑体" | "simhei" | "华文黑体" | "stheiti" | "华文细黑" | "stxihei" | "方正黑体_gbk" => HEI,
+        "微软雅黑" | "microsoft yahei" | "microsoft yahei ui" | "微软雅黑 light" => YAHEI,
         "palatino linotype" | "book antiqua" | "palatino" => PALATINO,
         "arial" | "helvetica" | "arial nova" => ARIAL,
         "times new roman" | "times" => TIMES,
@@ -304,6 +317,20 @@ mod tests {
         assert_eq!(charset_base_family("Cyr"), "Cyr");
         assert_eq!(charset_base_family("Calibri"), "Calibri");
         assert_eq!(substitutes(charset_base_family("Times New Roman Cyr")), substitutes("Times New Roman"));
+    }
+
+    #[test]
+    fn chinese_fonts_substitute_chinese_faces_of_their_kind() {
+        // 仿宋_GB2312 and 华文中宋 are rarely installed; Word shows FangSong and SimSun for them.
+        assert_eq!(substitutes("仿宋_GB2312").first(), Some(&"FangSong"));
+        assert_eq!(substitutes("华文中宋").first(), Some(&"SimSun"));
+        assert_eq!(substitutes("楷体_GB2312").first(), Some(&"KaiTi"));
+        assert_eq!(substitutes("华文细黑").first(), Some(&"SimHei"));
+        assert_eq!(substitutes("微软雅黑").first(), Some(&"Microsoft YaHei"));
+        // No Latin sans face stands in for them.
+        for f in ["仿宋_GB2312", "华文中宋", "楷体_GB2312", "新宋体"] {
+            assert!(!substitutes(f).contains(&"Carlito"), "{f}");
+        }
     }
 
     #[test]

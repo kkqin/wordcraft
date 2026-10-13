@@ -197,6 +197,9 @@ pub struct DisplayOptions {
     pub hide_ink: bool,
     /// How tracked changes and comments are marked when `markup` is on (Track Changes Options).
     pub revisions: MarkupOptions,
+    /// Draw the marks the way Word's Chinese interface does: ↵ for a paragraph mark and ↓ for a
+    /// line break, instead of ¶ and ↵.
+    pub east_asian_marks: bool,
 }
 
 impl Default for DisplayOptions {
@@ -210,6 +213,7 @@ impl Default for DisplayOptions {
             placeholders: false,
             hide_ink: false,
             revisions: MarkupOptions::default(),
+            east_asian_marks: false,
         }
     }
 }
@@ -1037,7 +1041,10 @@ fn lines(
                     ClKind::Tab if marks.tabs => {
                         out.push(Draw::Mark { x: cx + ((nx - cx) / 2.0 - size * 0.3).max(0.0), baseline: base, size, ch: arrow, color: None })
                     }
-                    ClKind::LineBreak if marks.paragraphs => out.push(Draw::Mark { x: cx + 1.0, baseline: base, size, ch: '↵', color: None }),
+                    ClKind::LineBreak if marks.paragraphs => {
+                        let ch = if opts.east_asian_marks { '↓' } else { '↵' };
+                        out.push(Draw::Mark { x: cx + 1.0, baseline: base, size: arrow_mark_size(size), ch, color: None })
+                    }
                     ClKind::PageBreak | ClKind::ColumnBreak if marks.paragraphs => {
                         let label = if c.kind == ClKind::PageBreak { '⤓' } else { '⇥' };
                         out.push(Draw::Line {
@@ -1081,12 +1088,20 @@ fn lines(
                     let (x0, x1) = if line.rtl { (x + line.left, ex - 2.0) } else { (ex + 2.0, x + line.right) };
                     section_break_mark(start, x0, x1, base, size, alpha, out);
                 } else {
-                    out.push(Draw::Mark { x: mx, baseline: base, size, ch: '¶', color });
+                    let (ch, size) = if opts.east_asian_marks { ('↵', arrow_mark_size(size)) } else { ('¶', size) };
+                    out.push(Draw::Mark { x: mx, baseline: base, size, ch, color });
                 }
             }
         }
         let _ = bottom;
     }
+}
+
+/// The size of an arrow mark (↵ ↓) for text of `size` points. The arrows come from a heavy
+/// fallback face, and Word draws them small whatever the text size, so they follow the text only
+/// up to a point.
+fn arrow_mark_size(size: f32) -> f32 {
+    (size * 0.6).clamp(5.0, 9.0)
 }
 
 /// The kind of section break that ends at body paragraph `path`: the start type of the section

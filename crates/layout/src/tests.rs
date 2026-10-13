@@ -866,6 +866,36 @@ fn column_segments_take_the_same_x_range_on_every_line() {
     assert!(l.column_segments(&d, &Pos::body(0, 2), &Pos::body(2, 2), f32::NAN, right, 0, 100).is_empty());
 }
 
+/// Word's Chinese interface draws a paragraph mark as ↵ and a line break as ↓, not ¶ and ↵.
+#[test]
+fn east_asian_marks_draw_the_chinese_word_symbols() {
+    let mut d = Document::from_text("");
+    d.body = vec![wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text("第一行\n第二行", Default::default()))];
+    let l = lay(&d);
+    let marks = |east_asian_marks| -> Vec<char> {
+        display::page_display(&d, &l.pages[0], &display::DisplayOptions { marks: true, east_asian_marks, ..Default::default() })
+            .into_iter()
+            .filter_map(|i| if let display::Draw::Mark { ch, .. } = i { Some(ch) } else { None })
+            .collect()
+    };
+    let western = marks(false);
+    assert!(western.contains(&'¶') && western.contains(&'↵') && !western.contains(&'↓'), "{western:?}");
+    let chinese = marks(true);
+    assert!(chinese.contains(&'↵') && chinese.contains(&'↓') && !chinese.contains(&'¶'), "{chinese:?}");
+    // The arrows stay small however big the text is: a 40 pt run draws them at 9 pt at most.
+    let mut big = Document::from_text("");
+    let mut p = wordcraft_doc::Paragraph::with_text("大字\n大字", Default::default());
+    p.runs[0].props.size = Some(40.0);
+    big.body = vec![wordcraft_doc::para_block(p)];
+    let bl = lay(&big);
+    let sizes: Vec<(char, f32)> =
+        display::page_display(&big, &bl.pages[0], &display::DisplayOptions { marks: true, east_asian_marks: true, ..Default::default() })
+            .into_iter()
+            .filter_map(|i| if let display::Draw::Mark { ch, size, .. } = i { Some((ch, size)) } else { None })
+            .collect();
+    assert!(sizes.iter().any(|(c, _)| *c == '↓') && sizes.iter().all(|(_, s)| *s <= 9.0), "{sizes:?}");
+}
+
 #[test]
 fn display_has_glyphs_and_marks() {
     let mut d = Document::from_text("Hello\tworld");

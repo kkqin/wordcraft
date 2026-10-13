@@ -980,6 +980,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 let mut opts = screen_render_options();
                 opts.display.marks = app.session.view.marks;
                 opts.display.always = app.session.prefs.marks;
+                opts.display.east_asian_marks = crate::i18n::current().code().starts_with("zh");
                 opts.display.placeholders = true;
                 opts.display.markup = app.session.view.show_markup;
                 // Ink Replay draws the ink itself, stroke by stroke, over pages without it.

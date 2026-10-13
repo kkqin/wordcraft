@@ -341,6 +341,9 @@ fn pixmap_for(doc: &Document, key: &str) -> Option<Arc<Pixmap>> {
     pm
 }
 
+/// How opaque formatting marks are drawn: present, but quieter than the text they annotate.
+const MARK_ALPHA: f32 = 0.55;
+
 /// Options for a page raster.
 #[derive(Clone, Debug)]
 pub struct RenderOptions {
@@ -633,13 +636,13 @@ fn draw(ctx: &mut RenderContext, doc: &Document, it: &Draw, view: Affine, visibl
             let gid = face.glyph_for(*ch);
             let o = FontDb::global().outline(&face, gid);
             let k = *size as f64 / face.upem.max(1.0);
-            ctx.set_paint(color(opts.ink(mark.unwrap_or(opts.mark_color)), 0.9));
+            ctx.set_paint(color(opts.ink(mark.unwrap_or(opts.mark_color)), MARK_ALPHA));
             ctx.set_transform(view * Affine::translate((*x as f64, *baseline as f64)) * Affine::scale(k));
             ctx.fill_path(&o);
         }
         Draw::MarkText { x, baseline, size, text } => {
             let base_face = wordcraft_fonts::word::resolve("Source Sans 3", false, false).face;
-            ctx.set_paint(color(opts.ink(opts.mark_color), 0.9));
+            ctx.set_paint(color(opts.ink(opts.mark_color), MARK_ALPHA));
             let mut gx = *x as f64;
             for ch in text.chars() {
                 let mut face = base_face;

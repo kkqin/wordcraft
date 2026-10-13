@@ -1465,6 +1465,23 @@ fn fields_and_hyperlinks() {
     assert_eq!(result, "3");
 }
 
+/// A field object takes its result's character formatting (a header's big grey page number).
+#[test]
+fn a_field_object_keeps_its_results_formatting() {
+    // N, field-begin, "PAGE", separator, result "3" (CP 7: 36 pt bold), field-end, paragraph mark.
+    let text = "N\u{13}PAGE\u{14}3\u{15}\r";
+    let ccp = text.chars().count() as u32;
+    let spec = StructSpec {
+        chpx_runs: vec![(0, Vec::new()), (7, grpprl(&[(0x0835, &[0x01]), (0x4A43, &72u16.to_le_bytes())])), (8, Vec::new())],
+        ..structured_spec(text, ccp)
+    };
+    let doc = read(&struct_doc(&spec)).expect("opens");
+    let p0 = doc.body.first().and_then(|b| b.as_para()).expect("para");
+    assert_eq!(p0.text, "N\u{FFFC}");
+    assert!(p0.runs.iter().any(|r| r.props.size == Some(36.0) && r.props.bold == Some(true)), "the field's run: {:?}", p0.runs);
+    assert!(p0.runs.first().is_some_and(|r| r.props.size.is_none()), "the text before it is untouched");
+}
+
 #[test]
 fn bookmarks_become_objects() {
     let text = "Hello world\r";
@@ -1518,23 +1535,6 @@ fn extras_doc() -> Vec<u8> {
     let png: Vec<u8> = [b"\x89PNG\r\n\x1a\n".as_slice(), &[0u8; 8]].concat();
     let mut picf = vec![0u8; 0x44];
     let lcb = (0x44 + png.len()) as u32;
-/// A field object takes its result's character formatting (a header's big grey page number).
-#[test]
-fn a_field_object_keeps_its_results_formatting() {
-    // N, field-begin, "PAGE", separator, result "3" (CP 7: 36 pt bold), field-end, paragraph mark.
-    let text = "N\u{13}PAGE\u{14}3\u{15}\r";
-    let ccp = text.chars().count() as u32;
-    let spec = StructSpec {
-        chpx_runs: vec![(0, Vec::new()), (7, grpprl(&[(0x0835, &[0x01]), (0x4A43, &72u16.to_le_bytes())])), (8, Vec::new())],
-        ..structured_spec(text, ccp)
-    };
-    let doc = read(&struct_doc(&spec)).expect("opens");
-    let p0 = doc.body.first().and_then(|b| b.as_para()).expect("para");
-    assert_eq!(p0.text, "N\u{FFFC}");
-    assert!(p0.runs.iter().any(|r| r.props.size == Some(36.0) && r.props.bold == Some(true)), "the field's run: {:?}", p0.runs);
-    assert!(p0.runs.first().is_some_and(|r| r.props.size.is_none()), "the text before it is untouched");
-}
-
     picf[0..4].copy_from_slice(&lcb.to_le_bytes());
     picf[4..6].copy_from_slice(&0x44u16.to_le_bytes());
     picf[28..30].copy_from_slice(&720i16.to_le_bytes());

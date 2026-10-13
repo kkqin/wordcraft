@@ -64,15 +64,18 @@ const ICO: [Rgb; 17] = [
     Rgb(192, 192, 192),
 ];
 
-/// Highlight palette ([MS-DOC] §2.9.135 Highlight, order of Word's highlighter row).
+/// `sprmCHighlight`'s operand is an `Ico` ([MS-DOC] §2.9.119), the same 17-colour palette as text
+/// colour: 7 is yellow, 9 dark blue. (Not the order of Word's highlighter row.)
 const HL: [Highlight; 17] = [
     Highlight::None,
-    Highlight::Yellow,
-    Highlight::BrightGreen,
-    Highlight::Turquoise,
-    Highlight::Pink,
+    Highlight::Black,
     Highlight::Blue,
+    Highlight::Turquoise,
+    Highlight::BrightGreen,
+    Highlight::Pink,
     Highlight::Red,
+    Highlight::Yellow,
+    Highlight::White,
     Highlight::DarkBlue,
     Highlight::Teal,
     Highlight::Green,
@@ -81,8 +84,6 @@ const HL: [Highlight; 17] = [
     Highlight::DarkYellow,
     Highlight::Gray50,
     Highlight::Gray25,
-    Highlight::None,
-    Highlight::None,
 ];
 
 /// The `Ico` palette colour (0 = automatic → `None`).

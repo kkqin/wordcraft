@@ -634,6 +634,27 @@ fn character_formatting_applied() {
     assert!(p.runs.first().is_some_and(|r| r.props.bold.is_none()));
 }
 
+/// `sprmCHighlight` holds an Ico: 7 is yellow (what Word shows for the usual highlighter), 9 dark
+/// blue, 0 none.
+#[test]
+fn highlight_operand_is_an_ico() {
+    use wordcraft_doc::props::Highlight;
+    let spec = RichSpec {
+        text: "none yellow blue\r",
+        styles: vec![(1, 0x0FFF, "Normal", Vec::new(), Vec::new())],
+        fonts: vec!["Times New Roman"],
+        chpx_runs: vec![(0, Vec::new()), (5, grpprl(&[(0x2A0C, &[7])])), (12, grpprl(&[(0x2A0C, &[9])]))],
+        papx_entries: vec![(0, 0, Vec::new())],
+    };
+    let doc = read(&rich_doc(&spec)).expect("opens");
+    let p = para0(&doc);
+    // Runs: "none " (0..5), "yellow" (5..12 incl. the space), "blue" (12..).
+    let hl = |i: usize| p.runs.get(i).map(|r| r.props.highlight);
+    assert_eq!(hl(0), Some(None));
+    assert_eq!(hl(1), Some(Some(Highlight::Yellow)));
+    assert_eq!(hl(2), Some(Some(Highlight::DarkBlue)));
+}
+
 #[test]
 fn font_and_size_from_style_and_direct() {
     let spec = RichSpec {

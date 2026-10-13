@@ -520,7 +520,10 @@ fn finish_field(pb: &mut ParaBuild, f: FieldBuild) {
         }
         return;
     }
-    pb.push('\u{FFFC}', CharProps::default());
+    // The object is drawn the way its result was: a page number in a header is often big, grey and
+    // italic, and that formatting lives on the result's characters.
+    let props = result.first().map(|(_, p)| p.clone()).unwrap_or_default();
+    pb.push('\u{FFFC}', props);
     pb.objects.push(InlineObject::Field { instr, result: result_text, locked: false, code: false });
 }
 

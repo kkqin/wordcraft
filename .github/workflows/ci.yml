@@ -4,9 +4,10 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  # Disabled on this fork: run by hand (workflow_dispatch).
+  # push:
+  #   branches: [main]
+  # pull_request:
   workflow_dispatch:
 
 permissions:

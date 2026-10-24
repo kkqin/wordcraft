@@ -1,8 +1,9 @@
 name: Release
 
 on:
-  push:
-    branches: [release]
+  # Disabled on this fork: run by hand (workflow_dispatch).
+  # push:
+  #   branches: [release]
   workflow_dispatch:
     inputs:
       version:

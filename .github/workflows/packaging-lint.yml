@@ -3,11 +3,12 @@
 name: Packaging lint
 
 on:
-  push:
-    branches: [main, release]
-    paths: [".github/workflows/**", "packaging/**", "assets/app-icon/**"]
-  pull_request:
-    paths: [".github/workflows/**", "packaging/**", "assets/app-icon/**"]
+  # Disabled on this fork: run by hand (workflow_dispatch).
+  # push:
+  #   branches: [main, release]
+  #   paths: [".github/workflows/**", "packaging/**", "assets/app-icon/**"]
+  # pull_request:
+  #   paths: [".github/workflows/**", "packaging/**", "assets/app-icon/**"]
   workflow_dispatch:
 
 permissions:

@@ -3,11 +3,12 @@
 name: Nix
 
 on:
-  push:
-    branches: [main]
-    paths: ["flake.nix", "flake.lock", "nix/**", "Cargo.lock", ".github/workflows/nix.yml"]
-  pull_request:
-    paths: ["flake.nix", "flake.lock", "nix/**", "Cargo.lock", ".github/workflows/nix.yml"]
+  # Disabled on this fork: run by hand (workflow_dispatch).
+  # push:
+  #   branches: [main]
+  #   paths: ["flake.nix", "flake.lock", "nix/**", "Cargo.lock", ".github/workflows/nix.yml"]
+  # pull_request:
+  #   paths: ["flake.nix", "flake.lock", "nix/**", "Cargo.lock", ".github/workflows/nix.yml"]
   workflow_dispatch:
 
 permissions:
